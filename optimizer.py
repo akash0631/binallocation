@@ -183,12 +183,60 @@ def parse_bin_location(bin_id):
         return (s[0], int(s[1]), 0, 0, '', 0)
     return ('', 0, 0, 0, '', 0)
 
-def _sn(s): return ord(s) - ord('A') + 1 if s and isinstance(s, str) and len(s) == 1 else 0
 def _ln(l): return ord(l) - ord('A') + 1 if l and isinstance(l, str) and len(l) == 1 else 0
 
+# ─── Physical aisle layout ───
+# Paired sections face each other across the same aisle.
+# Picker should pick BOTH sides of an aisle before moving to next row.
+# Format: section → (aisle_pair_index, side)  side: 0=near, 1=far
+AISLE_PAIRS = {
+    'A': (0, 0), 'B': (0, 1),   # Aisle 0: A(bottom) ↔ B(top), rows 1-22
+    'C': (1, 0), 'D': (1, 1),   # Aisle 1: C ↔ D, rows 1-28
+    'E': (2, 0), 'F': (2, 1),   # Aisle 2: E ↔ F, rows 1-8
+    'G': (3, 0), 'H': (3, 1),   # Aisle 3: G ↔ H, rows 1-12
+    'I': (4, 0), 'J': (4, 1),   # Aisle 4: I ↔ J, rows 1-18
+    'K': (5, 0), 'L': (5, 1),   # Aisle 5: K ↔ L, rows 1-22
+    'M': (6, 0),                 # Bottom strip (solo)
+    'N': (7, 0),                 # Bottom strip (solo)
+    'O': (8, 0),                 # Bottom strip (solo)
+    'R': (9, 0),                 # Misc (solo)
+}
+
 def walk_key(section, floor, row, gondola, level, position):
-    g = (99 - gondola) if (row and row % 2 == 0) else (gondola or 0)
-    return _sn(section) * 10_000_000 + (row or 0) * 100_000 + g * 1000 + _ln(level) * 10 + (position or 0)
+    """
+    Compute walk key respecting physical aisle layout.
+    
+    Row pairing: Rows 1&2 = aisle 1, rows 3&4 = aisle 2, 5&6 = aisle 3, etc.
+    Two rows face each other across the same aisle.
+    
+    Walk pattern:
+      Aisle 1 (rows 1,2): walk forward — at each gondola, pick row 1 then row 2
+      Aisle 2 (rows 3,4): walk backward (serpentine) — at each gondola, pick row 3 then row 4
+      Aisle 3 (rows 5,6): walk forward again ...etc
+    
+    This ensures the picker grabs from BOTH sides of the aisle at each
+    gondola position before moving to the next gondola. No backtracking.
+    """
+    pair, side = AISLE_PAIRS.get(section, (ord(section) - ord('A') + 10 if section else 99, 0))
+    
+    # Row-based aisle: rows 1&2→aisle 1, rows 3&4→aisle 2, etc.
+    r = row or 0
+    aisle = (r + 1) // 2          # 0→0, 1→1, 2→1, 3→2, 4→2, 5→3 ...
+    row_side = 0 if r % 2 == 1 else 1  # odd row = near side (0), even row = far side (1)
+    
+    # Serpentine at aisle level: odd aisles forward, even aisles backward
+    if aisle % 2 == 0:
+        g = 99 - (gondola or 0)
+    else:
+        g = gondola or 0
+    
+    return (pair * 100_000_000 +       # section pair (left→right across warehouse)
+            aisle * 1_000_000 +         # which aisle (paired rows)
+            g * 1_000 +                 # gondola (serpentine per aisle)
+            row_side * 100 +            # which side of aisle (odd row first, then even)
+            side * 50 +                 # section side (A before B within same position)
+            _ln(level) * 10 +           # shelf level
+            (position or 0))
 
 def round_to_pack(qty, ps):
     if ps <= 0: return qty
