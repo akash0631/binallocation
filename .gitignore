@@ -3,6 +3,3 @@ __pycache__/
 .env
 .DS_Store
 output/
-.venv/
-venv/
-.idea/

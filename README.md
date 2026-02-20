@@ -29,9 +29,7 @@ Opens at `http://localhost:8501`
 | 3. Picker Splitting | Splits heavy floors into multiple pickers. Each picker stays on ONE floor. Unique numbering per store. |
 | 4. KPIs | Fulfillment %, shortages, bins visited, pickers required, split rate per store. |
 
-## Files --
-
-
+## Files
 
 ```
 ├── app.py              ← Streamlit UI
